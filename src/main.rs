@@ -1,25 +1,33 @@
 use std::f64::consts::TAU;
 use std::fmt::Debug;
 use std::str::FromStr;
+use crate::Stitch::{DECREASE, INCREASE, SINGLE};
 
 fn main() {
     let curvature: f64 = prompt_user("curvature: ");
     let radius = 1. / curvature.abs().sqrt();
     //if the curvature is negative or zero, have a limited line count
-    let line_count: u32 = match curvature {
+    let line_count: usize = match curvature {
         ..=0.0 => prompt_user("line count:"),
-             _ => (0.5 * TAU * radius).ceil() as u32
-    };
+        _ => (0.5 * TAU * radius).ceil()
+    } as usize;
 
     //getting stitches per line
-    let mut stitches_per_line: Vec<u32> = Vec::new();
+    let mut stitches_per_line: Vec<i32> = Vec::new();
     for line_index in 0..line_count {
         let circumference = TAU * &radius * (line_index as f64).csin(&curvature);
-        stitches_per_line.push(circumference.round() as u32);
+        stitches_per_line.push(circumference.round() as i32);
     }
 
-    dbg!(stitches_per_line);
+    //forward difference operation
+    let mut delta_stitches : Vec<i32> = Vec::new();
 
+    for line_index in 1..line_count {
+        delta_stitches.push((stitches_per_line[line_index] - stitches_per_line[line_index - 1]));
+    }
+
+
+    dbg!(delta_stitches);
 }
 
 fn prompt_user<N: FromStr + Debug>(prompt: &str) -> N {
@@ -37,6 +45,28 @@ fn prompt_user<N: FromStr + Debug>(prompt: &str) -> N {
     }
 
     parsed_response.unwrap()
+}
+
+struct LineInstructions{
+    stitches: i32,
+    delta_stitches: i32,
+    stitch_info: Vec<Stitch>
+}
+
+enum Stitch{
+    DECREASE(i32),
+    SINGLE,
+    INCREASE(i32)
+}
+
+impl Stitch{
+    fn from_count(i: i32) -> Stitch {
+        match i {
+            ..=-1 => DECREASE(-i),
+            0 => SINGLE,
+            1.. => INCREASE(i),
+        }
+    }
 }
 
 trait CSin: Sized {
