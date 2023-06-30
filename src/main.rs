@@ -1,5 +1,6 @@
 use std::f64::consts::TAU;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter, write};
+use std::ops::Deref;
 use std::str::FromStr;
 use crate::Stitch::{DECREASE, INCREASE, SINGLE};
 
@@ -15,7 +16,8 @@ fn main() {
     //getting stitches per line
     let mut stitches_per_line: Vec<i32> = Vec::new();
     for line_index in 0..line_count {
-        let circumference = TAU * &radius * (line_index as f64).csin(&curvature);
+        let circumference = (line_index as f64).radius_to_circumference(&curvature);
+        dbg!(circumference);
         stitches_per_line.push(circumference.round() as i32);
     }
 
@@ -26,8 +28,9 @@ fn main() {
         delta_stitches.push((stitches_per_line[line_index] - stitches_per_line[line_index - 1]));
     }
 
+    let stitch_info = LineInstructions::generate(&*delta_stitches, &stitches_per_line[1..]);
 
-    dbg!(delta_stitches);
+    println!("{}", stitch_info);
 }
 
 fn prompt_user<N: FromStr + Debug>(prompt: &str) -> N {
@@ -40,48 +43,137 @@ fn prompt_user<N: FromStr + Debug>(prompt: &str) -> N {
             .read_line(&mut response)
             .expect("failed to read line");
         response.pop();
-        dbg!(&response, &parsed_response);
         parsed_response = response.parse::<N>().ok();
     }
 
     parsed_response.unwrap()
 }
 
-struct LineInstructions{
-    stitches: i32,
-    delta_stitches: i32,
-    stitch_info: Vec<Stitch>
+#[derive(Debug, Clone)]
+struct LineInstructions(Vec<LineInstruction>);
+
+impl LineInstructions {
+    fn generate(delta_stitches: &[i32], stitches: &[i32]) -> LineInstructions {
+        let r = LineInstructions(
+            delta_stitches.iter().zip(stitches.iter()).map( |(&delta_stitches, &stitches)| {
+                LineInstruction::generate(stitches, delta_stitches)
+            }).collect()
+        );
+        r
+    }
 }
 
+impl Display for LineInstructions {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+
+        for i in 0..self.0.len(){
+            let line_instruction = &self.0[i];
+            write!(f,"line #{}, {}\n", i+1, line_instruction)?;
+        }
+        Ok(())
+    }
+}
+
+impl Deref for LineInstructions{
+    type Target = Vec<LineInstruction>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LineInstruction {
+    pub stitches: i32,
+    pub increase_stitches: i32,
+    pub stitch_info: Vec<Stitch>
+}
+
+impl LineInstruction {
+    fn generate(stitches: i32, increase_stitches: i32) -> LineInstruction {
+
+        let mut stitch_info : Vec<Stitch> = Vec::with_capacity(stitches as usize);
+
+        let increases_per_stitch: f64 = increase_stitches as f64 / stitches as f64;
+        let mut current_increase_count: i32 = 0;
+        for stitch in 1..=stitches {
+            let approximate_current_increase_count = stitch as f64 * increases_per_stitch;
+            let increase_amount = (approximate_current_increase_count - current_increase_count as f64).floor() as i32;
+            if approximate_current_increase_count.abs() > i32::abs(current_increase_count) as f64 {
+                //should apply correct number of increases
+                current_increase_count += increase_amount;
+            }
+            stitch_info.push(Stitch::from(increase_amount));
+        }
+
+        LineInstruction {
+            stitches,
+            increase_stitches,
+            stitch_info,
+        }
+    }
+}
+
+impl Display for LineInstruction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut stitch_text = String::new();
+        for stitch in &self.stitch_info {
+            stitch_text.push_str(&*format!("{},", stitch));
+        }
+        stitch_text.pop();
+        write!(f, "{} = {}: {}", self.increase_stitches, self.stitches, stitch_text)
+    }
+}
+
+#[derive(Debug, Clone)]
 enum Stitch{
     DECREASE(i32),
     SINGLE,
     INCREASE(i32)
 }
 
-impl Stitch{
-    fn from_count(i: i32) -> Stitch {
-        match i {
-            ..=-1 => DECREASE(-i),
+impl Display for Stitch{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from(self))
+    }
+}
+
+impl From<i32> for Stitch {
+    fn from(increase_count: i32) -> Self {
+
+        match increase_count {
+            ..=-1 => DECREASE(-increase_count),
             0 => SINGLE,
-            1.. => INCREASE(i),
+            1.. => INCREASE(increase_count),
         }
     }
 }
 
-trait CSin: Sized {
-    fn csin(self, k: &f64) -> Self {
+impl From<&Stitch> for String {
+    fn from(stitch: &Stitch) -> Self {
+        match stitch {
+            DECREASE(1) => {format!("dec")}
+            DECREASE(i) => {format!("dec{}", i)}
+            SINGLE => {format!("sc")}
+            INCREASE(1) => {format!("inc")}
+            INCREASE(i) => {format!("inc{}", i)}
+        }
+    }
+}
+
+trait RadiusToCircumference: Sized {
+    fn radius_to_circumference(self, _: &f64) -> Self {
         self
     }
 }
 
-impl CSin for f64{
-    fn csin(self, k: &f64) -> Self {
+impl RadiusToCircumference for f64{
+    fn radius_to_circumference(self, k: &f64) -> Self {
         let r = 1./k.abs().sqrt();
-        match k.signum() as i8 {
-             1 => (self / r).sin(),
-             0 => self,
-            -1 => (self / r).sinh(),
+        match k{
+            0.    => TAU * self,
+            0. .. => TAU * (self / r).sin() /k.abs().sqrt(),
+            ..=0. => TAU * (self / r).sinh() /k.abs().sqrt(),
              _ => panic!("{}.abs isn't unit or zero", k)
         }
     }
