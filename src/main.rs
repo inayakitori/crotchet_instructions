@@ -17,18 +17,16 @@ fn main() {
     let mut stitches_per_line: Vec<i32> = Vec::new();
     for line_index in 0..line_count {
         let circumference = (line_index as f64).radius_to_circumference(&curvature);
-        dbg!(circumference);
         stitches_per_line.push(circumference.round() as i32);
     }
 
     //forward difference operation
     let mut delta_stitches : Vec<i32> = Vec::new();
-
     for line_index in 1..line_count {
         delta_stitches.push((stitches_per_line[line_index] - stitches_per_line[line_index - 1]));
     }
 
-    let stitch_info = LineInstructions::generate(&*delta_stitches, &stitches_per_line[1..]);
+    let stitch_info = LineInstructions::generate(&*delta_stitches, &stitches_per_line[..]);
 
     println!("{}", stitch_info);
 }
@@ -117,15 +115,33 @@ impl LineInstruction {
 impl Display for LineInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut stitch_text = String::new();
-        for stitch in &self.stitch_info {
-            stitch_text.push_str(&*format!("{},", stitch));
+        let mut sc_count = 0;
+        for i in 0..self.stitch_info.len() {
+            let stitch = &self.stitch_info[i];
+            let next_stitch_single = self.stitch_info.get(i+1)
+                .map_or(false, |next_stitch| next_stitch == &SINGLE);
+            let final_stitch = i == self.stitch_info.len() - 1;
+
+            if stitch == &SINGLE {
+                sc_count += 1;
+                if !next_stitch_single {// end
+                    if sc_count == 1 {
+                        stitch_text.push_str(&*format!("{},", stitch));
+                    } else {
+                        stitch_text.push_str(&*format!("{},", sc_count));
+                    }
+                    sc_count = 0
+                }
+            } else {
+                stitch_text.push_str(&*format!("{},", stitch));
+            }
         }
         stitch_text.pop();
-        write!(f, "{} = {}: {}", self.increase_stitches, self.stitches, stitch_text)
+        write!(f, "{} + {} stitches: {}", self.stitches, self.increase_stitches, stitch_text)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum Stitch{
     DECREASE(i32),
     SINGLE,
